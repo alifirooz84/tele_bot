@@ -1,13 +1,13 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
-const token = process.env.TELEGRAM_BOT_TOKEN || '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
+const token = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
 
 const bot = new TelegramBot(token, { polling: true });
 
 const experts = {
   '09170324187': 'علی فیروز',
-  '09135197039': 'علی رضایی',
+  '09135197039': 'علی رضایی'
 };
 
 const userState = {};
@@ -18,22 +18,20 @@ bot.on('message', async (msg) => {
 
   if (!text) return;
 
-  // مرحله دریافت شماره کارشناس
   if (!userState[chatId]) {
     if (/^09\d{9}$/.test(text)) {
       if (experts[text]) {
         userState[chatId] = { expertPhone: text, step: 'waiting_for_customer' };
-        await bot.sendMessage(chatId, `✅ خوش آمدید ${experts[text]}!\nلطفاً شماره مشتری را وارد کنید.`);
+        await bot.sendMessage(chatId, `✅ خوش آمدید ${experts[text]}!\nلطفاً شماره مشتری را ارسال کنید.`);
       } else {
-        await bot.sendMessage(chatId, '❌ شماره شما در لیست کارشناسان نیست. لطفاً شماره صحیح وارد کنید.');
+        await bot.sendMessage(chatId, '❌ شماره شما در لیست کارشناسان نیست.');
       }
     } else {
-      await bot.sendMessage(chatId, '👋 لطفاً شماره تماس خود را به‌صورت کامل (مثل 09123456789) ارسال کنید.');
+      await bot.sendMessage(chatId, 'لطفاً شماره موبایل خود را به صورت کامل ارسال کنید.');
     }
     return;
   }
 
-  // مرحله دریافت شماره مشتری
   if (userState[chatId].step === 'waiting_for_customer') {
     if (/^09\d{9}$/.test(text)) {
       const expertPhone = userState[chatId].expertPhone;
@@ -44,25 +42,28 @@ bot.on('message', async (msg) => {
           'https://pestehiran.shop/wp-json/gf/v2/forms/1/submissions',
           {
             input_values: {
-              '5': text,      // شماره مشتری
-              '6': expertName // نام کارشناس
+              '5': text,
+              '6': expertName
             }
           },
           {
-            auth: { username: 'Ali22', password: '5Zez ECjr EhoB fvDn PGmX jThS' },
+            auth: {
+              username: 'Ali22',
+              password: '5Zez ECjr EhoB fvDn PGmX jThS'
+            }
           }
         );
 
         await bot.sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
-      } catch (err) {
-        console.error(err.response?.data || err.message);
+      } catch (error) {
+        console.error(error.response?.data || error.message);
         await bot.sendMessage(chatId, '❌ خطا در ارسال اطلاعات به فرم.');
       }
-      userState[chatId] = null;
+
+      delete userState[chatId];
     } else {
-      await bot.sendMessage(chatId, '📱 لطفاً شماره مشتری را به‌صورت کامل و صحیح وارد کنید.');
+      await bot.sendMessage(chatId, 'لطفاً شماره مشتری را به صورت کامل وارد کنید.');
     }
-    return;
   }
 });
 
