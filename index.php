@@ -4,19 +4,22 @@ $update = json_decode($rawData, true);
 
 if (isset($update['message'])) {
     $chat_id = $update['message']['chat']['id'];
-    $username = isset($update['message']['chat']['username']) ? $update['message']['chat']['username'] : 'ندارد';
-    $first_name = isset($update['message']['chat']['first_name']) ? $update['message']['chat']['first_name'] : 'ندارد';
+    $text = $update['message']['text'] ?? '';
 
-    $logLine = date('Y-m-d H:i:s') . " | chat_id: $chat_id | username: @$username | first_name: $first_name\n";
-    file_put_contents('chat_ids.txt', $logLine, FILE_APPEND);
+    file_put_contents('log.txt', date('Y-m-d H:i:s') . " Message from $chat_id: $text\n", FILE_APPEND);
 
-    // پیام خوشامدگویی ساده
+    if ($text === '/start') {
+        $reply = "سلام! ربات فعال است و پیام شما دریافت شد.";
+    } else {
+        $reply = "پیام دریافت شد: $text";
+    }
+
     $botToken = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
-    $text = "سلام! شناسه چت شما ثبت شد.\nchat_id: $chat_id";
     $url = "https://api.telegram.org/bot$botToken/sendMessage?" . http_build_query([
         'chat_id' => $chat_id,
-        'text' => $text,
+        'text' => $reply,
     ]);
     file_get_contents($url);
 }
+
 echo "OK";
