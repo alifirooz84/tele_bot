@@ -1,6 +1,6 @@
 <?php
 
-$token = 'توکن_ربات_شما';
+$token = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
 
 $rawData = file_get_contents('php://input');
 file_put_contents("log.txt", date("Y-m-d H:i:s") . " RAW INPUT: " . $rawData . "\n", FILE_APPEND);
