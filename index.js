@@ -1,70 +1,100 @@
-const TelegramBot = require('node-telegram-bot-api');
-const axios = require('axios');
+const express = require('express');
+const bodyParser = require('body-parser');
+const fetch = require('node-fetch');
+const app = express();
 
-const token = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
+app.use(bodyParser.json());
 
-const bot = new TelegramBot(token, { polling: true });
+const PORT = process.env.PORT || 3000;
 
-const experts = {
+// کارشناسان و شماره‌ها
+const agents = {
   '09170324187': 'علی فیروز',
   '09135197039': 'علی رضایی'
 };
 
-const userState = {};
+// وضعیت کاربران { chat_id: { phone: '...', name: '...' } }
+const chatMap = {};
 
-bot.on('message', async (msg) => {
-  const chatId = msg.chat.id;
-  const text = msg.text?.trim();
+// توکن ربات تلگرام (توکن خودت رو اینجا بذار)
+const TELEGRAM_TOKEN = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
 
-  if (!text) return;
+// اطلاعات فرم گرویتی فرم
+const GF_USERNAME = 'Ali22';
+const GF_PASSWORD = '5Zez ECjr EhoB fvDn PGmX jThS';
+const GF_FORM_ID = 1;
+const GF_API_URL = `https://pestehiran.shop/wp-json/gf/v2/forms/${GF_FORM_ID}/submissions`;
 
-  if (!userState[chatId]) {
+// تابع ارسال پیام به تلگرام
+async function sendMessage(chatId, text) {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text })
+  });
+}
+
+// دریافت پیام‌ها
+app.post('/', async (req, res) => {
+  const message = req.body.message;
+  if (!message || !message.text) return res.sendStatus(200);
+
+  const chatId = message.chat.id;
+  const text = message.text.trim();
+
+  // اگر کاربر هنوز شماره کارشناس را ثبت نکرده
+  if (!chatMap[chatId]) {
     if (/^09\d{9}$/.test(text)) {
-      if (experts[text]) {
-        userState[chatId] = { expertPhone: text, step: 'waiting_for_customer' };
-        await bot.sendMessage(chatId, `✅ خوش آمدید ${experts[text]}!\nلطفاً شماره مشتری را ارسال کنید.`);
+      const agentName = agents[text];
+      if (agentName) {
+        chatMap[chatId] = { phone: text, name: agentName };
+        await sendMessage(chatId, `✅ خوش آمدید ${agentName}!\nلطفاً شماره مشتری را وارد کنید.`);
       } else {
-        await bot.sendMessage(chatId, '❌ شماره شما در لیست کارشناسان نیست.');
+        await sendMessage(chatId, '❌ شماره شما در لیست کارشناسان نیست.');
       }
     } else {
-      await bot.sendMessage(chatId, 'لطفاً شماره موبایل خود را به صورت کامل ارسال کنید.');
+      await sendMessage(chatId, '👋 لطفاً شماره تماس خود را به صورت کامل (مثل 09123456789) ارسال کنید.');
     }
-    return;
+    return res.sendStatus(200);
   }
 
-  if (userState[chatId].step === 'waiting_for_customer') {
-    if (/^09\d{9}$/.test(text)) {
-      const expertPhone = userState[chatId].expertPhone;
-      const expertName = experts[expertPhone];
+  // وقتی شماره مشتری ارسال شد
+  if (/^09\d{9}$/.test(text)) {
+    const { name } = chatMap[chatId];
 
-      try {
-        await axios.post(
-          'https://pestehiran.shop/wp-json/gf/v2/forms/1/submissions',
-          {
-            input_values: {
-              '5': text,
-              '6': expertName
-            }
-          },
-          {
-            auth: {
-              username: 'Ali22',
-              password: '5Zez ECjr EhoB fvDn PGmX jThS'
-            }
+    try {
+      const gfResponse = await fetch(GF_API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(`${GF_USERNAME}:${GF_PASSWORD}`).toString('base64'),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          input_values: {
+            '5': text, // شماره مشتری
+            '6': name  // نام کارشناس
           }
-        );
+        })
+      });
 
-        await bot.sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
-      } catch (error) {
-        console.error(error.response?.data || error.message);
-        await bot.sendMessage(chatId, '❌ خطا در ارسال اطلاعات به فرم.');
+      if (gfResponse.ok) {
+        await sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
+      } else {
+        await sendMessage(chatId, '❌ خطا در ارسال اطلاعات به فرم.');
       }
-
-      delete userState[chatId];
-    } else {
-      await bot.sendMessage(chatId, 'لطفاً شماره مشتری را به صورت کامل وارد کنید.');
+    } catch (error) {
+      console.error(error);
+      await sendMessage(chatId, '❌ خطا در ارسال اطلاعات به فرم.');
     }
+
+    delete chatMap[chatId];
+  } else {
+    await sendMessage(chatId, '📱 لطفاً شماره مشتری را به صورت کامل وارد کنید.');
   }
+
+  return res.sendStatus(200);
 });
 
-console.log('Bot is running...');
+app.listen(PORT, () => {
+  console.log(`Bot is running on port ${PORT}`);
+});
