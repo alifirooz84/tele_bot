@@ -6,15 +6,16 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 
-// اطلاعات کارشناسان
+// لیست کارشناسان با شماره و نام
 const agents = {
   '09170324187': 'علی فیروز',
   '09135197039': 'علی رضایی'
 };
 
-// ذخیره مپ چت‌آیدی به شماره کارشناس
-const chatMap = {}; // { chat_id: { phone: '0917...', name: 'علی فیروز' } }
+// ذخیره مپ چت‌آیدی به شماره و نام کارشناس
+const chatMap = {};
 
+// توکن ربات و اطلاعات گرویتی فرم
 const TELEGRAM_TOKEN = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
 const GF_USERNAME = 'Ali22';
 const GF_PASSWORD = '5Zez ECjr EhoB fvDn PGmX jThS';
@@ -22,77 +23,89 @@ const GF_FORM_ID = 1;
 const GF_API_URL = `https://pestehiran.shop/wp-json/gf/v2/forms/${GF_FORM_ID}/submissions`;
 
 // ارسال پیام به تلگرام
-function sendMessage(chatId, text) {
-  return fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text })
-  });
+async function sendMessage(chatId, text) {
+  try {
+    const resp = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text })
+    });
+    if (!resp.ok) {
+      console.error(`Error sending message: ${resp.status} ${resp.statusText}`);
+    }
+  } catch (e) {
+    console.error('Exception in sendMessage:', e);
+  }
 }
 
-// تابع کمکی برای تاخیر (مثلا جلوگیری از ارور 429)
+// تابع تاخیر برای جلوگیری از ارور 429
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// مدیریت پیام‌های ورودی
 app.post('/', async (req, res) => {
+  console.log('Received update:', JSON.stringify(req.body, null, 2));
   const message = req.body.message;
   if (!message || !message.text) return res.sendStatus(200);
 
   const chatId = message.chat.id;
   const text = message.text.trim();
 
-  // اگر هنوز کارشناس ثبت‌نام نکرده
-  if (!chatMap[chatId]) {
+  try {
+    // ثبت کارشناس
+    if (!chatMap[chatId]) {
+      if (/^09\d{9}$/.test(text)) {
+        const agentName = agents[text];
+        if (agentName) {
+          chatMap[chatId] = { phone: text, name: agentName };
+          await sendMessage(chatId, `✅ خوش آمدید ${agentName}!\nلطفاً شماره مشتری را وارد کنید.`);
+          await sleep(1100);
+        } else {
+          await sendMessage(chatId, '❌ شماره شما در لیست کارشناسان نیست.');
+          await sleep(1100);
+        }
+      } else {
+        await sendMessage(chatId, '👋 لطفاً شماره تماس خود را به‌صورت کامل (مثل 09123456789) ارسال کنید.');
+        await sleep(1100);
+      }
+      return res.sendStatus(200);
+    }
+
+    // دریافت شماره مشتری و ارسال به گرویتی فرم
     if (/^09\d{9}$/.test(text)) {
-      const agentName = agents[text];
-      if (agentName) {
-        chatMap[chatId] = { phone: text, name: agentName };
-        await sendMessage(chatId, `✅ خوش آمدید ${agentName}!\nلطفاً شماره مشتری را وارد کنید.`);
+      const { name } = chatMap[chatId];
+      console.log(`Sending to Gravity Forms: customer phone=${text}, agent name=${name}`);
+
+      const gfResponse = await fetch(GF_API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(`${GF_USERNAME}:${GF_PASSWORD}`).toString('base64'),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          input_values: {
+            '5': text,
+            '6': name
+          }
+        })
+      });
+
+      if (gfResponse.ok) {
+        await sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
         await sleep(1100);
       } else {
-        await sendMessage(chatId, '❌ شماره شما در لیست کارشناسان نیست.');
+        const errorText = await gfResponse.text();
+        console.error('Gravity Forms API error:', errorText);
+        await sendMessage(chatId, `❌ خطا در ارسال اطلاعات به فرم:\n${errorText}`);
         await sleep(1100);
       }
     } else {
-      await sendMessage(chatId, '👋 لطفاً شماره تماس خود را به‌صورت کامل (مثل 09123456789) ارسال کنید.');
+      await sendMessage(chatId, '📱 لطفاً شماره مشتری را به‌صورت کامل وارد کنید.');
       await sleep(1100);
     }
-    return res.sendStatus(200);
-  }
-
-  // اگر شماره مشتری فرستاده شده
-  if (/^09\d{9}$/.test(text)) {
-    const { name } = chatMap[chatId];
-
-    // ارسال به گرویتی فرم با فرمت درست
-    const gfResponse = await fetch(GF_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + Buffer.from(`${GF_USERNAME}:${GF_PASSWORD}`).toString('base64'),
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        input_values: {
-          '5': text, // شماره مشتری
-          '6': name  // نام کارشناس
-        }
-      })
-    });
-
-    if (gfResponse.ok) {
-      await sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
-      await sleep(1100);
-    } else {
-      const errorText = await gfResponse.text();
-      console.error('Error from Gravity Forms API:', errorText);
-      await sendMessage(chatId, `❌ خطا در ارسال اطلاعات به فرم:\n${errorText}`);
-      await sleep(1100);
-    }
-  } else {
-    await sendMessage(chatId, '📱 لطفاً شماره مشتری را به‌صورت کامل وارد کنید.');
-    await sleep(1100);
+  } catch (error) {
+    console.error('Error handling message:', error);
+    await sendMessage(chatId, '⚠️ خطایی رخ داد، لطفاً دوباره تلاش کنید.');
   }
 
   res.sendStatus(200);
