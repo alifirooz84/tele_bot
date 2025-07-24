@@ -30,6 +30,11 @@ function sendMessage(chatId, text) {
   });
 }
 
+// تابع کمکی برای تاخیر (مثلا جلوگیری از ارور 429)
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // مدیریت پیام‌های ورودی
 app.post('/', async (req, res) => {
   const message = req.body.message;
@@ -41,16 +46,18 @@ app.post('/', async (req, res) => {
   // اگر هنوز کارشناس ثبت‌نام نکرده
   if (!chatMap[chatId]) {
     if (/^09\d{9}$/.test(text)) {
-      // شماره موبایل فرستاده شده
       const agentName = agents[text];
       if (agentName) {
         chatMap[chatId] = { phone: text, name: agentName };
         await sendMessage(chatId, `✅ خوش آمدید ${agentName}!\nلطفاً شماره مشتری را وارد کنید.`);
+        await sleep(1100);
       } else {
         await sendMessage(chatId, '❌ شماره شما در لیست کارشناسان نیست.');
+        await sleep(1100);
       }
     } else {
       await sendMessage(chatId, '👋 لطفاً شماره تماس خود را به‌صورت کامل (مثل 09123456789) ارسال کنید.');
+      await sleep(1100);
     }
     return res.sendStatus(200);
   }
@@ -76,13 +83,16 @@ app.post('/', async (req, res) => {
 
     if (gfResponse.ok) {
       await sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
+      await sleep(1100);
     } else {
       const errorText = await gfResponse.text();
       console.error('Error from Gravity Forms API:', errorText);
-      await sendMessage(chatId, '❌ خطا در ارسال اطلاعات به فرم.');
+      await sendMessage(chatId, `❌ خطا در ارسال اطلاعات به فرم:\n${errorText}`);
+      await sleep(1100);
     }
   } else {
     await sendMessage(chatId, '📱 لطفاً شماره مشتری را به‌صورت کامل وارد کنید.');
+    await sleep(1100);
   }
 
   res.sendStatus(200);
