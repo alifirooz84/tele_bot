@@ -30,8 +30,13 @@ async function sendMessage(chatId, text) {
 }
 
 app.post('/', async (req, res) => {
+  console.log('Received update:', JSON.stringify(req.body, null, 2));
+
   const message = req.body.message;
-  if (!message || !message.text) return res.sendStatus(200);
+  if (!message || !message.text) {
+    res.sendStatus(200);
+    return;
+  }
 
   const chatId = message.chat.id;
   const text = message.text.trim();
@@ -47,7 +52,8 @@ app.post('/', async (req, res) => {
     } else {
       await sendMessage(chatId, '👋 لطفاً شماره تماس خود را به صورت کامل (مثل 09123456789) ارسال کنید.');
     }
-    return res.sendStatus(200);
+    res.sendStatus(200);
+    return;
   }
 
   if (/^09\d{9}$/.test(text)) {
@@ -71,10 +77,12 @@ app.post('/', async (req, res) => {
       if (response.ok) {
         await sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
       } else {
+        const errorText = await response.text();
+        console.error('Gravity Forms API error:', errorText);
         await sendMessage(chatId, '❌ خطا در ارسال اطلاعات به فرم.');
       }
     } catch (error) {
-      console.error(error);
+      console.error('Fetch error:', error);
       await sendMessage(chatId, '❌ خطا در ارسال اطلاعات به فرم.');
     }
 
