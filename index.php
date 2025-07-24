@@ -1,79 +1,59 @@
 <?php
-// برای اطمینان از اجرای صحیح
-echo "ربات تلگرام در حال اجراست ✅";
 
-// --- تنظیمات اولیه ---
-// توکن رباتت رو اینجا بذار
-$bot_token = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
-$api_url = "https://api.telegram.org/bot$bot_token/";
+// توکن ربات شما
+$token = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
 
-// گرفتن ورودی تلگرام (آپدیت)
-$content = file_get_contents("php://input");
-$update = json_decode($content, true);
+// دریافت داده‌های دریافتی از webhook
+$update = json_decode(file_get_contents('php://input'), true);
 
-// ذخیره در فایل لاگ برای بررسی (اختیاری)
-file_put_contents("log.txt", json_encode($update));
+// ذخیره کردن لاگ در فایل log.txt
+file_put_contents("log.txt", date("Y-m-d H:i:s") . " | " . print_r($update, true) . "\n", FILE_APPEND);
 
-// اگر پیام جدید اومده
-if (isset($update["message"])) {
-    $message = $update["message"];
-    $chat_id = $message["chat"]["id"];
+// بررسی اینکه آیا پیام جدیدی دریافت شده یا نه
+if (isset($update['message'])) {
+    $chat_id = $update['message']['chat']['id'];
+    $text = $update['message']['text'] ?? '';
 
-    // اگر /start فرستاده شد
-    if (isset($message["text"]) && $message["text"] === "/start") {
-        sendKeyboard($chat_id);
-    }
+    if ($text === '/start') {
+        $keyboard = [
+            'keyboard' => [
+                [['text' => '📞 ارسال شماره تماس']]
+            ],
+            'resize_keyboard' => true,
+            'one_time_keyboard' => true
+        ];
 
-    // اگر کاربر شماره فرستاد
-    if (isset($message["contact"])) {
-        $phone = $message["contact"]["phone_number"];
-        sendPhoneToWordpress($phone);
-        sendMessage($chat_id, "✅ شماره شما با موفقیت ثبت شد.");
+        $reply_markup = json_encode($keyboard);
+
+        sendMessage($chat_id, "سلام! لطفاً شماره تماس خود را با کلیک روی دکمه زیر ارسال کنید.", $reply_markup);
     }
 }
 
-// تابع: ارسال شماره به وردپرس
-function sendPhoneToWordpress($phone) {
-    $url = 'https://pestehiran.shop/?receive-phone=1'; // آدرس API وردپرس شما
+// تابع ارسال پیام
+function sendMessage($chat_id, $text, $reply_markup = null) {
+    global $token;
 
-    $data = ['phone' => $phone];
+    $url = "https://api.telegram.org/bot$token/sendMessage";
+
+    $data = [
+        'chat_id' => $chat_id,
+        'text' => $text,
+        'reply_markup' => $reply_markup
+    ];
+
     $options = [
         'http' => [
-            'header'  => "Content-type: application/json\r\n",
+            'header'  => "Content-Type: application/json",
             'method'  => 'POST',
             'content' => json_encode($data),
         ]
     ];
-    $context  = stream_context_create($options);
+
+    $context = stream_context_create($options);
     file_get_contents($url, false, $context);
 }
 
-// تابع: ارسال پیام متنی ساده
-function sendMessage($chat_id, $text) {
-    global $api_url;
-    file_get_contents($api_url . "sendMessage?chat_id=$chat_id&text=" . urlencode($text));
-}
-
-// تابع: ارسال کیبورد با درخواست شماره تماس
-function sendKeyboard($chat_id) {
-    global $api_url;
-
-    $keyboard = [
-        "keyboard" => [
-            [
-                ["text" => "📞 ارسال شماره من", "request_contact" => true]
-            ]
-        ],
-        "resize_keyboard" => true,
-        "one_time_keyboard" => true
-    ];
-
-    $data = [
-        'chat_id' => $chat_id,
-        'text' => "لطفاً دکمه زیر را بزنید تا شماره شما ثبت شود:",
-        'reply_markup' => json_encode($keyboard)
-    ];
-
-    $url = $api_url . "sendMessage?" . http_build_query($data);
-    file_get_contents($url);
+// برای تست دستی در مرورگر
+if (php_sapi_name() === 'cli-server' && empty($update)) {
+    echo "ربات تلگرام در حال اجراست ✅";
 }
