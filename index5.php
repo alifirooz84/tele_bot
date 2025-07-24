@@ -7,7 +7,7 @@ $update = json_decode($content, true);
 file_put_contents("log.txt", json_encode($update));
 
 // توکن ربات
-$bot_token = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
+$bot_token = 'توکن-ربات-تو-اینجا-بذار';
 $api_url = "https://api.telegram.org/bot$bot_token/";
 
 // بررسی پیام
@@ -43,29 +43,19 @@ function sendPhoneToWordpress($phone) {
     file_get_contents($url, false, $context);
 }
 
-// ارسال پیام
-function sendMessage($chat_id, $text) {
-    global $api_url;
-    file_get_contents($api_url . "sendMessage?chat_id=$chat_id&text=" . urlencode($text));
-}
-
-// ارسال کیبورد
+// ارسال پیام ساده (بدون کیبورد)
 function sendKeyboard($chat_id) {
     global $api_url;
-    $keyboard = [
-        "keyboard" => [
-            [
-                ["text" => "📞 ارسال شماره من", "request_contact" => true]
-            ]
-        ],
-        "resize_keyboard" => true,
-        "one_time_keyboard" => true
-    ];
     $data = [
         'chat_id' => $chat_id,
-        'text' => "لطفاً دکمه زیر را بزنید تا شماره شما ثبت شود:",
-        'reply_markup' => json_encode($keyboard)
+        'text' => "سلام! لطفاً شماره‌ات رو بفرست."
     ];
     $url = $api_url . "sendMessage?" . http_build_query($data);
     file_get_contents($url);
+}
+
+// ارسال پیام معمولی
+function sendMessage($chat_id, $text) {
+    global $api_url;
+    file_get_contents($api_url . "sendMessage?chat_id=$chat_id&text=" . urlencode($text));
 }
