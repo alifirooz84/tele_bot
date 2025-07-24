@@ -59,7 +59,7 @@ app.post('/', async (req, res) => {
   if (/^09\d{9}$/.test(text)) {
     const { name } = chatMap[chatId];
 
-    // ارسال به گرویتی فرم
+    // ارسال به گرویتی فرم با فرمت درست
     const gfResponse = await fetch(GF_API_URL, {
       method: 'POST',
       headers: {
@@ -67,14 +67,18 @@ app.post('/', async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        '5': text, // شماره مشتری
-        '6': name  // نام کارشناس
+        input_values: {
+          '5': text, // شماره مشتری
+          '6': name  // نام کارشناس
+        }
       })
     });
 
     if (gfResponse.ok) {
       await sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
     } else {
+      const errorText = await gfResponse.text();
+      console.error('Error from Gravity Forms API:', errorText);
       await sendMessage(chatId, '❌ خطا در ارسال اطلاعات به فرم.');
     }
   } else {
