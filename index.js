@@ -1,7 +1,8 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
-const token = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';  // توکن ربات تلگرام
+const token = process.env.TELEGRAM_BOT_TOKEN || '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
+
 const bot = new TelegramBot(token, { polling: true });
 
 const experts = {
@@ -17,7 +18,7 @@ bot.on('message', async (msg) => {
 
   if (!text) return;
 
-  // مرحله اول: دریافت شماره کارشناس
+  // مرحله دریافت شماره کارشناس
   if (!userState[chatId]) {
     if (/^09\d{9}$/.test(text)) {
       if (experts[text]) {
@@ -32,7 +33,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // مرحله دوم: دریافت شماره مشتری
+  // مرحله دریافت شماره مشتری
   if (userState[chatId].step === 'waiting_for_customer') {
     if (/^09\d{9}$/.test(text)) {
       const expertPhone = userState[chatId].expertPhone;
@@ -43,8 +44,8 @@ bot.on('message', async (msg) => {
           'https://pestehiran.shop/wp-json/gf/v2/forms/1/submissions',
           {
             input_values: {
-              '5': text,      // شماره مشتری (فیلد شماره 5)
-              '6': expertName // نام کارشناس (فیلد شماره 6)
+              '5': text,      // شماره مشتری
+              '6': expertName // نام کارشناس
             }
           },
           {
@@ -64,3 +65,5 @@ bot.on('message', async (msg) => {
     return;
   }
 });
+
+console.log('Bot is running...');
