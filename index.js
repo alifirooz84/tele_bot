@@ -1,32 +1,28 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const fetch = require('node-fetch');
-const storage = require('node-persist'); // برای ذخیره دائمی
+const storage = require('node-persist');
 
 const app = express();
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 
-// اطلاعات کارشناسان: شماره موبایل => نام کارشناس
 const agents = {
   '09170324187': 'علی فیروز',
   '09135197039': 'علی رضایی'
 };
 
-// توکن تلگرام و اطلاعات گرویتی فرم
-const TELEGRAM_TOKEN = 'توکن_ربات_تلگرام_تو';
+const TELEGRAM_TOKEN = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
 const GF_USERNAME = 'Ali22';
-const GF_PASSWORD = 'رمز_خصوصی_تو';
+const GF_PASSWORD = '8b903f9496ac65e';
 const GF_FORM_ID = 1;
 const GF_API_URL = `https://pestehiran.shop/wp-json/gf/v2/forms/${GF_FORM_ID}/submissions`;
 
-// راه‌اندازی ذخیره‌سازی دائمی
 (async () => {
   await storage.init();
 })();
 
-// ارسال پیام به تلگرام
 async function sendMessage(chatId, text) {
   try {
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
@@ -39,19 +35,12 @@ async function sendMessage(chatId, text) {
   }
 }
 
-// دریافت شماره کارشناس ذخیره شده برای chat_id
 async function getAgentByChatId(chatId) {
   return await storage.getItem(`agent_${chatId}`);
 }
 
-// ذخیره شماره کارشناس برای chat_id
 async function setAgentForChatId(chatId, phone, name) {
   await storage.setItem(`agent_${chatId}`, { phone, name });
-}
-
-// حذف اطلاعات کارشناس (در صورت نیاز)
-async function removeAgent(chatId) {
-  await storage.removeItem(`agent_${chatId}`);
 }
 
 app.post('/', async (req, res) => {
@@ -62,18 +51,16 @@ app.post('/', async (req, res) => {
     const chatId = message.chat.id;
     const text = message.text.trim();
 
-    // چک کن ببین قبلا کارشناس ثبت شده برای این چت
     let agent = await getAgentByChatId(chatId);
 
     if (!agent) {
-      // اگر شماره موبایل ارسال شده
       if (/^09\d{9}$/.test(text)) {
         const agentName = agents[text];
         if (agentName) {
           await setAgentForChatId(chatId, text, agentName);
           await sendMessage(chatId, `✅ خوش آمدید ${agentName}!\nلطفاً شماره مشتری را وارد کنید.`);
         } else {
-          await sendMessage(chatId, '❌ شماره شما در لیست کارشناسان نیست. لطفاً شماره معتبر ارسال کنید.');
+          await sendMessage(chatId, '❌ شماره شما در لیست کارشناسان نیست.');
         }
       } else {
         await sendMessage(chatId, '👋 لطفاً شماره تماس خود را به‌صورت کامل (مثل 09123456789) ارسال کنید.');
@@ -81,13 +68,11 @@ app.post('/', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // اگر شماره مشتری ارسال شده
     if (/^09\d{9}$/.test(text)) {
-      // ارسال داده به گرویتی فرم
       const postData = {
         input_values: {
-          '5': text,      // شماره مشتری (فیلد شماره 5)
-          '6': agent.name // نام کارشناس (فیلد شماره 6)
+          '5': text,
+          '6': agent.name
         }
       };
 
