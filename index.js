@@ -1,103 +1,101 @@
-import TelegramBot from 'node-telegram-bot-api';
-import fs from 'fs/promises';
-import fetch from 'node-fetch';
+const TelegramBot = require('node-telegram-bot-api');
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
-// ====== تنظیمات ======
-const TOKEN = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';  
-const GRAVITY_API_URL = 'https://pestehiran.shop/wp-json/gf/v2/forms/1/submissions';  // <<< آدرس API گرویتی فرمت رو بذار
-const GRAVITY_API_USER = 'ck_c41df7e26cdcfcf53c467b77a62b13e91f4343fc';  // <<< نام کاربری API گرویتی فرم
-const GRAVITY_API_PASS = 'cs_539bbe6f6d5e524b984d4a658d1d698c75574295';  // <<< رمز API گرویتی فرم
+const TOKEN = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
+const bot = new TelegramBot(TOKEN, { polling: true });
 
-const STORAGE_FILE = './users.json'; // فایل ذخیره اطلاعات کارشناس
+const expertsInfo = {
+  '09170324187': 'علی فیروز',
+  '09121234567': 'حسن محمدی',
+};
 
-// ====== بارگذاری حافظه ======
-async function loadUsers() {
+const DATA_FILE = path.join(__dirname, 'users_data.json');
+
+// تابع خواندن داده‌های ذخیره شده
+function loadUsers() {
   try {
-    const data = await fs.readFile(STORAGE_FILE, 'utf-8');
-    return JSON.parse(data);
-  } catch {
-    return {}; // اگر فایل نبود یا خطا بود، دیکشنری خالی برگردان
+    if (fs.existsSync(DATA_FILE)) {
+      const data = fs.readFileSync(DATA_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('Error loading users data:', e);
+  }
+  return {};
+}
+
+// تابع ذخیره داده‌ها
+function saveUsers(users) {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(users, null, 2));
+  } catch (e) {
+    console.error('Error saving users data:', e);
   }
 }
 
-// ====== ذخیره حافظه ======
-async function saveUsers(users) {
-  await fs.writeFile(STORAGE_FILE, JSON.stringify(users, null, 2));
-}
+// بارگذاری اولیه
+let users = loadUsers();
 
-// ====== ربات ======
-const bot = new TelegramBot(TOKEN, { polling: true });
+const GRAVITY_API_URL = 'https://pestehiran.shop/wp-json/gf/v2/forms/1/submissions';
+const GRAVITY_AUTH_USER = 'ck_c41df7e26cdcfcf53c467b77a62b13e91f4343fc';
+const GRAVITY_AUTH_PASS = 'cs_539bbe6f6d5e524b984d4a658d1d698c75574295';
 
 bot.on('message', async (msg) => {
-  const chatId = msg.chat.id.toString();
+  const chatId = msg.chat.id;
   const text = msg.text?.trim();
   if (!text) return;
 
-  // بارگذاری کاربران ذخیره شده
-  const users = await loadUsers();
-
-  // بررسی وجود کارشناس در حافظه
   if (!users[chatId]) {
-    // اگر شماره کارشناس ذخیره نشده، از کاربر شماره بگیر
-    if (!/^\+?\d{10,15}$/.test(text)) {
-      bot.sendMessage(chatId, 'لطفا شماره تماس کارشناس را به صورت صحیح وارد کنید (مثلا 09123456789).');
-      return;
-    }
-
-    // ذخیره شماره کارشناس
-    users[chatId] = { salesPhone: text };
-    await saveUsers(users);
-    bot.sendMessage(chatId, `شماره کارشناس ثبت شد: ${text}\nحالا شماره مشتری را ارسال کنید.`);
+    users[chatId] = { step: 'waitingExpertPhone' };
+    saveUsers(users);
+    bot.sendMessage(chatId, 'سلام! لطفاً شماره تلفن کارشناس خود را وارد کنید:');
     return;
   }
 
-  // اگر شماره کارشناس ذخیره است اما شماره مشتری هنوز نگرفته‌ایم
-  if (!users[chatId].customerPhone) {
-    // اعتبارسنجی شماره مشتری
-    if (!/^\+?\d{10,15}$/.test(text)) {
-      bot.sendMessage(chatId, 'لطفا شماره مشتری را به صورت صحیح وارد کنید.');
-      return;
+  const user = users[chatId];
+
+  if (user.step === 'waitingExpertPhone') {
+    if (expertsInfo[text]) {
+      user.expertPhone = text;
+      user.expertName = expertsInfo[text];
+      user.step = 'waitingCustomerPhone';
+      saveUsers(users);
+      bot.sendMessage(chatId, `کارشناس شما ${user.expertName} ثبت شد. لطفاً شماره مشتری را وارد کنید:`);
+    } else {
+      bot.sendMessage(chatId, 'شماره کارشناس معتبر نیست. لطفاً شماره صحیح را وارد کنید:');
     }
+    return;
+  }
 
-    // ذخیره شماره مشتری
-    users[chatId].customerPhone = text;
-    await saveUsers(users);
-
-    // ارسال داده‌ها به گرویتی فرم
-    const bodyData = {
-      input_values: {
-        5: users[chatId].customerPhone,  // شماره مشتری - id فیلد شماره مشتری
-        6: users[chatId].salesPhone      // شماره کارشناس - id فیلد نام کارشناس
-      }
-    };
-
+  if (user.step === 'waitingCustomerPhone') {
+    const customerPhone = text;
     try {
-      const res = await fetch(GRAVITY_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Basic ' + Buffer.from(GRAVITY_API_USER + ':' + GRAVITY_API_PASS).toString('base64')
+      await axios.post(
+        GRAVITY_API_URL,
+        {
+          input_values: {
+            6: user.expertName,
+            5: customerPhone,
+          },
         },
-        body: JSON.stringify(bodyData)
-      });
-
-      if (res.ok) {
-        bot.sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
-      } else {
-        const errorData = await res.json();
-        bot.sendMessage(chatId, `❌ خطا در ارسال اطلاعات به فرم:\n${JSON.stringify(errorData)}`);
-      }
-    } catch (e) {
-      bot.sendMessage(chatId, `❌ خطا در ارسال درخواست: ${e.message}`);
+        {
+          auth: {
+            username: GRAVITY_AUTH_USER,
+            password: GRAVITY_AUTH_PASS,
+          },
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      bot.sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد. می‌توانید شماره مشتری بعدی را وارد کنید:');
+    } catch (error) {
+      console.error('Error sending to Gravity Forms:', error.response?.data || error.message);
+      bot.sendMessage(chatId, '❌ خطا در ارسال اطلاعات به فرم. لطفاً دوباره تلاش کنید.');
     }
-
-    // حذف شماره مشتری برای ثبت مجدد (اختیاری)
-    delete users[chatId].customerPhone;
-    await saveUsers(users);
-
-    return;
   }
-
-  // اگر همه اطلاعات ثبت شده بود و پیام اضافی آمد، به کاربر راهنمایی بده
-  bot.sendMessage(chatId, 'برای ثبت سفارش شماره مشتری را ارسال کنید.');
 });
+
+console.log('Bot is running...');
