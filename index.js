@@ -1,108 +1,103 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const fetch = require('node-fetch');
-const storage = require('node-persist');
+import TelegramBot from 'node-telegram-bot-api';
+import fs from 'fs/promises';
+import fetch from 'node-fetch';
 
-const app = express();
-app.use(bodyParser.json());
+// ====== تنظیمات ======
+const TOKEN = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';  
+const GRAVITY_API_URL = 'https://pestehiran.shop/wp-json/gf/v2/forms/1/submissions';  // <<< آدرس API گرویتی فرمت رو بذار
+const GRAVITY_API_USER = 'ck_c41df7e26cdcfcf53c467b77a62b13e91f4343fc';  // <<< نام کاربری API گرویتی فرم
+const GRAVITY_API_PASS = 'cs_539bbe6f6d5e524b984d4a658d1d698c75574295';  // <<< رمز API گرویتی فرم
 
-const PORT = process.env.PORT || 3000;
+const STORAGE_FILE = './users.json'; // فایل ذخیره اطلاعات کارشناس
 
-const agents = {
-  '09170324187': 'علی فیروز',
-  '09135197039': 'علی رضایی'
-};
-
-const TELEGRAM_TOKEN = '7956714963:AAHnybhfhA3c0d7C1VJnXIHhbR-fkeTsXfI';
-const GF_USERNAME = 'Ali22';
-const GF_PASSWORD = '8b903f9496ac65e';
-const GF_FORM_ID = 1;
-const GF_API_URL = `https://pestehiran.shop/wp-json/gf/v2/forms/${GF_FORM_ID}/submissions`;
-
-(async () => {
-  await storage.init();
-})();
-
-async function sendMessage(chatId, text) {
+// ====== بارگذاری حافظه ======
+async function loadUsers() {
   try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text })
-    });
-  } catch (error) {
-    console.error('Error sending Telegram message:', error);
+    const data = await fs.readFile(STORAGE_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    return {}; // اگر فایل نبود یا خطا بود، دیکشنری خالی برگردان
   }
 }
 
-async function getAgentByChatId(chatId) {
-  return await storage.getItem(`agent_${chatId}`);
+// ====== ذخیره حافظه ======
+async function saveUsers(users) {
+  await fs.writeFile(STORAGE_FILE, JSON.stringify(users, null, 2));
 }
 
-async function setAgentForChatId(chatId, phone, name) {
-  await storage.setItem(`agent_${chatId}`, { phone, name });
-}
+// ====== ربات ======
+const bot = new TelegramBot(TOKEN, { polling: true });
 
-app.post('/', async (req, res) => {
-  try {
-    const message = req.body.message;
-    if (!message || !message.text) return res.sendStatus(200);
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id.toString();
+  const text = msg.text?.trim();
+  if (!text) return;
 
-    const chatId = message.chat.id;
-    const text = message.text.trim();
+  // بارگذاری کاربران ذخیره شده
+  const users = await loadUsers();
 
-    let agent = await getAgentByChatId(chatId);
-
-    if (!agent) {
-      if (/^09\d{9}$/.test(text)) {
-        const agentName = agents[text];
-        if (agentName) {
-          await setAgentForChatId(chatId, text, agentName);
-          await sendMessage(chatId, `✅ خوش آمدید ${agentName}!\nلطفاً شماره مشتری را وارد کنید.`);
-        } else {
-          await sendMessage(chatId, '❌ شماره شما در لیست کارشناسان نیست.');
-        }
-      } else {
-        await sendMessage(chatId, '👋 لطفاً شماره تماس خود را به‌صورت کامل (مثل 09123456789) ارسال کنید.');
-      }
-      return res.sendStatus(200);
+  // بررسی وجود کارشناس در حافظه
+  if (!users[chatId]) {
+    // اگر شماره کارشناس ذخیره نشده، از کاربر شماره بگیر
+    if (!/^\+?\d{10,15}$/.test(text)) {
+      bot.sendMessage(chatId, 'لطفا شماره تماس کارشناس را به صورت صحیح وارد کنید (مثلا 09123456789).');
+      return;
     }
 
-    if (/^09\d{9}$/.test(text)) {
-      const postData = {
-        input_values: {
-          '5': text,
-          '6': agent.name
-        }
-      };
+    // ذخیره شماره کارشناس
+    users[chatId] = { salesPhone: text };
+    await saveUsers(users);
+    bot.sendMessage(chatId, `شماره کارشناس ثبت شد: ${text}\nحالا شماره مشتری را ارسال کنید.`);
+    return;
+  }
 
-      const gfResponse = await fetch(GF_API_URL, {
+  // اگر شماره کارشناس ذخیره است اما شماره مشتری هنوز نگرفته‌ایم
+  if (!users[chatId].customerPhone) {
+    // اعتبارسنجی شماره مشتری
+    if (!/^\+?\d{10,15}$/.test(text)) {
+      bot.sendMessage(chatId, 'لطفا شماره مشتری را به صورت صحیح وارد کنید.');
+      return;
+    }
+
+    // ذخیره شماره مشتری
+    users[chatId].customerPhone = text;
+    await saveUsers(users);
+
+    // ارسال داده‌ها به گرویتی فرم
+    const bodyData = {
+      input_values: {
+        5: users[chatId].customerPhone,  // شماره مشتری - id فیلد شماره مشتری
+        6: users[chatId].salesPhone      // شماره کارشناس - id فیلد نام کارشناس
+      }
+    };
+
+    try {
+      const res = await fetch(GRAVITY_API_URL, {
         method: 'POST',
         headers: {
-          'Authorization': 'Basic ' + Buffer.from(`${GF_USERNAME}:${GF_PASSWORD}`).toString('base64'),
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': 'Basic ' + Buffer.from(GRAVITY_API_USER + ':' + GRAVITY_API_PASS).toString('base64')
         },
-        body: JSON.stringify(postData)
+        body: JSON.stringify(bodyData)
       });
 
-      if (gfResponse.ok) {
-        await sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
+      if (res.ok) {
+        bot.sendMessage(chatId, '✅ اطلاعات با موفقیت ثبت شد.');
       } else {
-        const errorText = await gfResponse.text();
-        console.error('Gravity Forms error:', errorText);
-        await sendMessage(chatId, '❌ خطا در ارسال اطلاعات به فرم.');
+        const errorData = await res.json();
+        bot.sendMessage(chatId, `❌ خطا در ارسال اطلاعات به فرم:\n${JSON.stringify(errorData)}`);
       }
-    } else {
-      await sendMessage(chatId, '📱 لطفاً شماره مشتری را به‌صورت کامل وارد کنید.');
+    } catch (e) {
+      bot.sendMessage(chatId, `❌ خطا در ارسال درخواست: ${e.message}`);
     }
 
-    res.sendStatus(200);
-  } catch (err) {
-    console.error('Error in webhook:', err);
-    res.sendStatus(500);
-  }
-});
+    // حذف شماره مشتری برای ثبت مجدد (اختیاری)
+    delete users[chatId].customerPhone;
+    await saveUsers(users);
 
-app.listen(PORT, () => {
-  console.log(`Bot is running on port ${PORT}`);
+    return;
+  }
+
+  // اگر همه اطلاعات ثبت شده بود و پیام اضافی آمد، به کاربر راهنمایی بده
+  bot.sendMessage(chatId, 'برای ثبت سفارش شماره مشتری را ارسال کنید.');
 });
